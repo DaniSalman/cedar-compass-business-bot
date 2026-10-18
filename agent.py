@@ -15,11 +15,21 @@ from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError, APIConnectionError, APIStatusError
 from pypdf import PdfReader
 
-from budget import Budget, BudgetExceeded, MODEL
+from budget import Budget, BudgetExceeded, DEFAULT_MODEL
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=False)
 REFLECTION_ENABLED = os.getenv("REFLECTION_ENABLED", "true").lower() == "true"
+
+# Gemini through its OpenAI-compatible endpoint, so the official openai client works.
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+MODEL = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+# Gemini 3 models always think. Flash-Lite accepts "minimal"; the lightest level
+# gemini-3.8-flash accepts is "low".
+REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT") or ("minimal" if "lite" in MODEL else "low")
+# Gemini counts thinking tokens toward max_completion_tokens (and bills them as
+# output), so every call gets this much room on top of its visible answer limit.
+THINKING_ROOM_TOKENS = 2048
 
 # PERSONA: identity and voice, deliberately separate from operational rules.
 PERSONA = """You are Layla, the friendly, upbeat virtual travel concierge of Cedar & Compass
@@ -87,7 +97,7 @@ OPENAI_TOOLS = [{"type": "function", "function": {
     "parameters": t["inputSchema"], "strict": True}} for t in MCP_TOOL_DEFINITIONS]
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$")
-SECRET_RE = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{12,}|hf_[A-Za-z0-9]{15,})\b")
+SECRET_RE = re.compile(r"\b(?:AIza[0-9A-Za-z_-]{35}|sk-[A-Za-z0-9_-]{12,}|hf_[A-Za-z0-9]{15,})\b")
 # Candidate card numbers; luhn_card() filters out phone numbers and dates.
 CARD_RE = re.compile(r"(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)")
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -118,7 +128,7 @@ def luhn_card(match):
 def scrub(text):
     """Prevent credentials/sensitive numeric strings entering prompts or logs."""
     text = str(text)
-    for name in ("OPENAI_API_KEY", "HF_TOKEN", "GEMINI_API_KEY"):
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "HF_TOKEN"):
         value = os.getenv(name)
         if value:
             text = text.replace(value, "[REDACTED]")
@@ -149,15 +159,15 @@ def make_system_prompt(summary, pdf, persona=PERSONA, instructions=INSTRUCTIONS)
 
 
 def get_key():
-    key = os.getenv("OPENAI_API_KEY", "").strip()
+    key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip().strip("\"'")
     if not key:
         try:
             from google.colab import userdata
-            key = userdata.get("OPENAI_API_KEY") or ""
+            key = userdata.get("GEMINI_API_KEY") or ""
         except Exception:
             key = ""
     if not key:
-        raise RuntimeError("Set OPENAI_API_KEY in .env, the environment, or Colab Secrets.")
+        raise RuntimeError("Set GEMINI_API_KEY in .env, the environment, or Colab Secrets.")
     return key
 
 
@@ -233,37 +243,55 @@ class BusinessAgent:
         self.system_prompt = system_prompt or make_system_prompt(summary, pdf)
         self.reflection_enabled = reflection_enabled
         self.tools = ToolRecorder(self.log_dir)
-        self.budget = budget or Budget(self.log_dir / ".api_budget.sqlite3", os.getenv("API_BUDGET_USD", "0.25"))
+        self.budget = budget or Budget(self.log_dir / ".api_budget.sqlite3",
+                                       os.getenv("API_BUDGET_USD", "1.00"), model=MODEL)
         self._client = client  # Construct lazily so the app opens without a key.
 
     @property
     def client(self):
         if self._client is None:
             # Disable hidden SDK retries: each explicit attempt gets a reservation.
-            self._client = OpenAI(api_key=get_key(), max_retries=0, timeout=30.0)
+            self._client = OpenAI(api_key=get_key(), base_url=GEMINI_BASE_URL,
+                                  max_retries=0, timeout=60.0)
         return self._client
 
     def complete(self, phase, messages, max_tokens=450, **kwargs):
         client = self.client
         payload = {"messages": messages, **kwargs}
-        for attempt in range(3):
-            reservation = self.budget.reserve(phase, payload, max_tokens)
+        limit = max_tokens + THINKING_ROOM_TOKENS
+        for attempt in range(4):
+            reservation = self.budget.reserve(phase, payload, limit)
             try:
+                # Temperature stays at the model default: Google advises against
+                # lowering it for Gemini 3 models.
                 result = client.chat.completions.create(
-                    model=MODEL, messages=messages, max_completion_tokens=max_tokens,
-                    temperature=0, store=False, service_tier="default", **kwargs)
-            except RateLimitError:
-                # Preserve uncertain reservation. Each retry needs a new one.
-                if attempt == 2:
+                    model=MODEL, messages=messages, max_completion_tokens=limit,
+                    reasoning_effort=REASONING_EFFORT, **kwargs)
+            except RateLimitError as exc:
+                # A rejected request is not billed. Each retry needs a new reservation.
+                self.budget.release(reservation)
+                detail = str(exc)
+                if "PerDay" in detail:
+                    raise RuntimeError("The free Gemini daily quota for this model is used up. It resets at "
+                                       "midnight Pacific time, or set GEMINI_MODEL in .env to another model.") from None
+                if attempt == 3:
                     raise RuntimeError("The API is busy. Please try again in a moment.") from None
-                time.sleep(2 ** attempt)
+                # Free-tier per-minute limits say how long to wait.
+                delay = re.search(r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)s", detail)
+                time.sleep(min(float(delay.group(1)) + 1, 60) if delay else 5 * 2 ** attempt)
                 continue
-            except (APIConnectionError, APIStatusError):
-                # No automatic retry after ambiguous network/provider failures.
+            except APIConnectionError:
+                # No automatic retry after ambiguous network failures.
                 raise RuntimeError("The travel assistant could not reach the API. Please try later.") from None
+            except APIStatusError as exc:
+                raise RuntimeError(f"The Gemini API returned an error (HTTP {exc.status_code}). "
+                                   "Please try again later.") from None
             if result.usage is None:
                 raise RuntimeError("API usage was unavailable; reservation retained and reply withheld.")
-            self.budget.settle(reservation, result.usage.prompt_tokens, result.usage.completion_tokens)
+            usage = result.usage
+            # Count everything beyond the prompt as output, including any thinking tokens.
+            output_tokens = max(usage.completion_tokens or 0, (usage.total_tokens or 0) - usage.prompt_tokens)
+            self.budget.settle(reservation, usage.prompt_tokens, output_tokens)
             return result
         raise RuntimeError("API retry limit reached.")
 
@@ -298,7 +326,8 @@ class BusinessAgent:
             label = "general_question"
             fallback = True
         append_json(self.log_dir / "router_log.jsonl", {"timestamp": now(), "message": scrub(message),
-            "intent": label, "fallback": fallback, "raw_response": scrub(raw)[:250]})
+            "intent": label, "fallback": fallback, "raw_response": scrub(raw)[:250],
+            "finish_reason": result.choices[0].finish_reason})
         print("Router:", label)
         return label
 
@@ -377,10 +406,10 @@ class BusinessAgent:
             if not answer.tool_calls:
                 draft = answer.content or "A team member can help confirm that. What trip do you have in mind?"
                 break
+            # model_dump keeps Gemini 3's thought signature (extra_content) on each
+            # call; Gemini requires it back in the follow-up request.
             messages.append({"role": "assistant", "content": answer.content,
-                "tool_calls": [{"id": call.id, "type": "function", "function": {
-                    "name": call.function.name, "arguments": call.function.arguments}}
-                    for call in answer.tool_calls]})
+                "tool_calls": [call.model_dump(exclude_none=True) for call in answer.tool_calls]})
             for call in answer.tool_calls:
                 name = call.function.name
                 try:

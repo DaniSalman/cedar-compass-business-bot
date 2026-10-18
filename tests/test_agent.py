@@ -10,7 +10,7 @@ from budget import Budget, BudgetExceeded, input_upper_bound
 
 def reply(content=None, calls=None):
     return ChatCompletion.model_validate({"id": "offline", "object": "chat.completion", "created": 0,
-        "model": "gpt-4.1-mini", "usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+        "model": "gemini-3.5-flash-lite", "usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
         "choices": [{"index": 0, "finish_reason": "tool_calls" if calls else "stop",
                      "message": {"role": "assistant", "content": content, "tool_calls": calls}}]})
 
@@ -59,7 +59,7 @@ def test_dispatch_rejects_fabricated_contact_and_wrong_shape(tmp_path):
 
 def test_sensitive_data_scrubbed(monkeypatch):
     fake = "unit-test-secret-value"
-    monkeypatch.setenv("OPENAI_API_KEY", fake)
+    monkeypatch.setenv("GEMINI_API_KEY", fake)
     assert fake not in scrub(fake)
     assert "4111" not in scrub("My card: 4111 1111 1111 1111")
     assert "abc123" not in scrub("passport number: abc123")
@@ -176,7 +176,7 @@ def test_budget_anomaly_fails_closed(tmp_path):
 
 
 def test_budget_limits_and_long_input(tmp_path):
-    for limit in ["3", "-1", "NaN", "Infinity"]:
+    for limit in ["11", "-1", "NaN", "Infinity"]:
         with pytest.raises(ValueError):
             Budget(tmp_path / "budget.sqlite3", limit)
     with pytest.raises(BudgetExceeded):
@@ -192,18 +192,47 @@ def test_budget_prevents_network_call(tmp_path):
     assert not c.sent
 
 
-def test_rate_limit_retries_have_separate_reservations(tmp_path, monkeypatch):
+def rate_limit(message):
     import httpx
     from openai import RateLimitError
-    monkeypatch.setattr("agent.time.sleep", lambda _: None)
-    response = httpx.Response(429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"))
-    error = RateLimitError("rate limit", response=response, body={})
+    response = httpx.Response(429, request=httpx.Request("POST", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"))
+    return RateLimitError(message, response=response, body={})
+
+
+def test_rate_limit_retries_wait_and_release_reservations(tmp_path, monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("agent.time.sleep", sleeps.append)
+    error = rate_limit("quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' 'retryDelay': '17s'")
     c = ScriptedClient([error, error, reply('{"intent":"general_question"}')])
     a = BusinessAgent(log_dir=tmp_path, client=c)
     assert a.route("Hello") == "general_question"
-    assert len(c.sent) == 3
-    assert a.budget.summary()["calls_attempted"] == 3
-    assert a.budget.summary()["unsettled_reservations"] == 2
+    assert len(c.sent) == 3 and sleeps == [18.0, 18.0]
+    summary = a.budget.summary()
+    assert summary["calls_attempted"] == 3 and summary["unsettled_reservations"] == 0
+    assert summary["input_tokens"] == 100  # only the successful call is charged
+
+
+def test_daily_quota_fails_fast(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent.time.sleep", lambda _: pytest.fail("should not wait"))
+    c = ScriptedClient([rate_limit("quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'")])
+    a = BusinessAgent(log_dir=tmp_path, client=c)
+    with pytest.raises(RuntimeError, match="daily quota"):
+        a.route("Hello")
+    assert len(c.sent) == 1
+
+
+def test_thought_signature_sent_back_with_tool_call(tmp_path):
+    signed = call("record_feedback", {"question": "Insurance?"}, "f1")
+    signed["extra_content"] = {"google": {"thought_signature": "sig-123"}}
+    c = ScriptedClient([
+        reply('{"intent":"feedback_unanswered"}'),
+        reply(calls=[signed]),
+        reply("I don't have that information, but the team has your question."),
+    ])
+    a = BusinessAgent(log_dir=tmp_path, client=c, reflection_enabled=False)
+    a.respond_with_trace("Insurance?")
+    assistant = [m for m in c.sent[-1]["messages"] if m["role"] == "assistant"][-1]
+    assert assistant["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": "sig-123"}}
 
 
 def test_duplicate_calls_execute_only_once(tmp_path):

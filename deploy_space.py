@@ -1,6 +1,6 @@
 """Deploy the app to a Hugging Face Space; never writes credentials.
 
-Needs OPENAI_API_KEY, HF_TOKEN and HF_SPACE_ID in the environment.
+Needs GEMINI_API_KEY, HF_TOKEN and HF_SPACE_ID in the environment (or .env).
 Free personal accounts can only host Gradio Spaces on ZeroGPU hardware, so that
 is the default; set HF_SPACE_HARDWARE=cpu-basic if your account has PRO.
 The Space is private unless HF_SPACE_PUBLIC=true (needed for others to open it).
@@ -25,9 +25,9 @@ def main():
     api = HfApi(token=token)
     api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="gradio", private=private,
                     space_hardware=hardware, exist_ok=True)
-    api.add_space_secret(repo_id=repo_id, key="OPENAI_API_KEY", value=get_key())
+    api.add_space_secret(repo_id=repo_id, key="GEMINI_API_KEY", value=get_key())
     api.add_space_variable(repo_id=repo_id, key="GRADIO_SERVER_NAME", value="0.0.0.0")
-    api.add_space_variable(repo_id=repo_id, key="API_BUDGET_USD", value="0.10")
+    api.add_space_variable(repo_id=repo_id, key="API_BUDGET_USD", value="1.00")
     api.upload_folder(repo_id=repo_id, repo_type="space", folder_path=str(ROOT), allow_patterns=ALLOW)
     url = f"https://huggingface.co/spaces/{repo_id}"
     print(f"Uploaded source files ({hardware}, {'private' if private else 'public'}):", url)

@@ -1,6 +1,6 @@
 """Small, repeatable LIVE demo suite. All contacts here are simulated.
 
-Run directly with: python demo_checks.py (requires OPENAI_API_KEY).
+Run directly with: python demo_checks.py (requires GEMINI_API_KEY).
 The notebook calls the same functions and saves their real outputs.
 """
 import json

@@ -18,7 +18,7 @@ Layla is the virtual concierge of Cedar & Compass Travel, a **fictional** boutiq
 travel agency in Hamra, Beirut. She answers questions from the business PDF and
 summary, routes every message to one of three handling paths, records leads and
 feedback through real model function calls, and reviews each reply before
-sending it.
+sending it. It runs on Google Gemini (free tier), model `gemini-3.5-flash-lite`.
 
 - **Demo video:** _add link here_
 - **Hugging Face Space (bonus):** _add link here, or remove this line_
@@ -85,7 +85,9 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Open `.env` and set `OPENAI_API_KEY`. Leave the HF fields empty unless deploying.
+Open `.env` and set `GEMINI_API_KEY` (a free key from
+[Google AI Studio](https://aistudio.google.com/apikey)). Leave the HF fields empty
+unless deploying.
 Then start the app:
 
 ```bash
@@ -99,14 +101,14 @@ details in the demo, never real passport, card or password details.
 ## Notebook (local or Colab)
 
 Locally: open `business_agent.ipynb` and choose **Restart Kernel → Run All**.
-With a key, Run All makes about 35 small API calls (a few cents) and saves the
-results to `evidence/live_results.json`. Without a key the live demos are skipped
+With a key, Run All makes about 35 API calls (within the free daily quota) and
+saves the results to `evidence/live_results.json`. Without a key the live demos are skipped
 with a clear message.
 
 In Colab:
 
 1. Open `business_agent.ipynb` in Colab.
-2. Add `OPENAI_API_KEY` under **Secrets** (key icon) and enable notebook access.
+2. Add `GEMINI_API_KEY` under **Secrets** (key icon) and enable notebook access.
 3. In the first cell, set `REPO_URL` to this repository's URL, or upload a ZIP
    of this folder named `business_bot.zip` to `/content`.
 4. Run all cells. The first cell clones or extracts the project and installs the
@@ -115,6 +117,12 @@ In Colab:
    In Colab this creates a temporary public `share=True` link.
 
 ## How the agent works
+
+The brief names `google.generativeai` or `openai.ChatCompletion`. Google has since
+deprecated `google.generativeai`, so this project uses the current `openai` Python
+client (`client.chat.completions.create`) pointed at
+[Gemini's OpenAI-compatible endpoint](https://ai.google.dev/gemini-api/docs/openai)
+with a Gemini key.
 
 1. **Knowledge:** at startup `pypdf` extracts all three PDF pages and the summary
    is loaded. Both go into the system prompt. The sources are small, so no vector
@@ -127,7 +135,9 @@ In Colab:
    `general_question`. Each label adds a different handling instruction before the
    main agent runs, and every decision is logged.
 4. **Tools:** two short strict JSON schemas, documented MCP-style in the notebook
-   and converted into OpenAI function declarations. The model chooses when to call
+   and converted into OpenAI-format function declarations, which Gemini accepts.
+   Gemini 3 attaches a "thought signature" to each tool call; the agent sends it
+   back with the tool results, as Gemini requires. The model chooses when to call
    them (`tool_choice="auto"`). On the feedback path the first generation is
    required to call `record_feedback`, so unknown questions are always logged.
    Python validates each call, runs it, and returns the result to the model by
@@ -149,16 +159,29 @@ The model is still probabilistic. Routing, forced feedback logging and reflectio
 reduce mistakes but cannot guarantee every reply is correct. The sensitive-data
 checks are basic classroom safeguards, not a full data-loss-prevention system.
 
-## API budget guard
+## Model, free-tier quota and budget guard
 
-The model is fixed to `gpt-4.1-mini` with short answer limits. `budget.py` uses
-$0.40 per million input tokens and $1.60 per million output tokens (OpenAI's
-published rates when checked on 2026-10-18).
+The default model is `gemini-3.5-flash-lite` with the lightest thinking level
+(`minimal`). Set `GEMINI_MODEL` in `.env` to change it. Free-tier quotas are per
+model and per day (reset at midnight Pacific time). `gemini-3.8-flash` is smarter
+but allows only **20 free requests per day**, fewer than one notebook Run All
+(about 35 calls). If a model's daily quota runs out, the app says so instead of
+retrying. Per-minute limits are handled by waiting for the delay Gemini returns
+(up to three retries).
 
-Before every API call, the guard reserves the maximum possible cost of that call
-in a local SQLite ledger (`.api_budget.sqlite3`) and refuses the call if the total
-would pass the cap. After the call it records the real usage. The default cap is
-**$0.25** (`API_BUDGET_USD` in `.env`, maximum $0.50). If you hit the cap, raise
+Gemini's thinking tokens count toward each call's output limit, so every call
+gets 2,048 tokens of extra room. Without this, the router's JSON answer was cut
+off and every message fell back to `general_question`.
+
+The free tier costs nothing, but the budget guard stays as a safety net in case
+billing is ever enabled on the Google project. `budget.py` prices calls at
+Gemini 3.5 Flash-Lite's paid rates ($0.30 per million input tokens, $2.50 per
+million output tokens, checked on 2026-10-18). Before every API call, the guard
+reserves the maximum possible cost of that call in a local SQLite ledger
+(`.api_budget.sqlite3`) and refuses the call if the total would pass the cap.
+After the call it records the real usage; requests rejected with HTTP 429 are
+released, since they are not billed. The default cap is **$1.00**
+(`API_BUDGET_USD` in `.env`, maximum $10). If you hit the cap, raise
 `API_BUDGET_USD` or delete `.api_budget.sqlite3` to start a new ledger.
 
 Check spending without making an API call:
@@ -224,21 +247,20 @@ Manual steps:
 1. Create a new Space: SDK **Gradio**, hardware **ZeroGPU** (or CPU Basic with PRO).
 2. Upload `README.md`, `app.py`, `agent.py`, `budget.py`, `requirements.txt` and
    the `me/` folder. Do not upload `.env`, logs or the budget ledger.
-3. In **Settings → Variables and secrets**, add the secret `OPENAI_API_KEY` and
-   the variable `API_BUDGET_USD=0.10`.
+3. In **Settings → Variables and secrets**, add the secret `GEMINI_API_KEY` and
+   the variable `API_BUDGET_USD=1.00`.
 4. Wait until the Space shows **Running**, then ask "What are your office hours?".
 
-Or set `HF_TOKEN` (write access) and `HF_SPACE_ID=username/space-name` alongside
-`OPENAI_API_KEY`, then run `python deploy_space.py`. It uploads only the app
+Or set `HF_TOKEN` (write access) and `HF_SPACE_ID=username/space-name` in `.env`
+next to `GEMINI_API_KEY`, then run `python deploy_space.py`. It uploads only the app
 files, stores the key as a Space secret, waits for the build and sends a test
 message. It never writes either token to disk. Options: `HF_SPACE_HARDWARE`
 (default `zero-a10g`, i.e. ZeroGPU) and `HF_SPACE_PUBLIC=true`.
 
 A **private** Space can only be opened by you, so a grader can't open it. A
-**public** Space lets anyone chat with it using your API key. The `$0.10` cap
-limits that, but the ledger lives on the Space's temporary disk and resets
-when the Space restarts. Make it public only for grading, then switch it back
-to private.
+**public** Space lets anyone chat with it using your Gemini key. On the free tier
+that costs nothing, but every visitor uses up the same daily quota. Make it public
+only for grading, then switch it back to private.
 
 ## Video demo outline (about 80 seconds)
 
@@ -254,17 +276,23 @@ to private.
 
 ## Lessons from testing
 
-An early version sent unknown questions and complaints down the general path, and
-once claimed the agency does not sell insurance (the documents simply don't
-mention it). Three changes fixed this: the router now uses a strict enum schema,
-the feedback path must call `record_feedback`, and the instructions treat an
-unlisted service as unknown rather than unavailable.
+- An early version sent unknown questions and complaints down the general path,
+  and once claimed the agency does not sell insurance (the documents simply don't
+  mention it). Three changes fixed this: the router now uses a strict enum schema,
+  the feedback path must call `record_feedback`, and the instructions treat an
+  unlisted service as unknown rather than unavailable.
+- Moving to Gemini, the router scored 5/9 at first: thinking tokens used up its
+  55-token output limit, so the JSON was cut off and fell back to
+  `general_question`. Adding thinking room brought it back to 9/9.
+- `gemini-3.8-flash` ran out of its 20 free daily requests during testing, so the
+  default became `gemini-3.5-flash-lite`, which also answers about three times faster.
 
 ## References
 
-- [GPT-4.1 mini model and pricing](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
-- [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
-- [Chat Completions Python reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
+- [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)
+- [Gemini pricing and free tier](https://ai.google.dev/gemini-api/docs/pricing)
+- [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+- [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling)
 - [Gradio ChatInterface](https://www.gradio.app/docs/gradio/chatinterface)
 - [Gradio Spaces configuration](https://huggingface.co/docs/hub/spaces-sdks-gradio)
 - [Spaces overview and hardware](https://huggingface.co/docs/hub/spaces-overview)
