@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-18",
+  "python": "3.14.7",
+  "command": "python -m pytest -q",
+  "tests_passed": 25,
+  "tests_failed": 0,
+  "duration_seconds": 1.74,
+  "network_used": false,
+  "gradio_construction": "ChatInterface constructed successfully"
+}

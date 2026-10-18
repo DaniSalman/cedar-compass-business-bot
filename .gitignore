@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+*.log
+*.jsonl
+leads.csv
+.api_budget.sqlite3*
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store

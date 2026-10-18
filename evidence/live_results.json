@@ -1,0 +1,217 @@
+{
+  "router": [
+    {
+      "message": "What's included in the Istanbul package?",
+      "predicted_intent": "general_question",
+      "expected_intent": "general_question",
+      "pass": true
+    },
+    {
+      "message": "Do you offer student discounts?",
+      "predicted_intent": "general_question",
+      "expected_intent": "general_question",
+      "pass": true
+    },
+    {
+      "message": "What are your office hours?",
+      "predicted_intent": "general_question",
+      "expected_intent": "general_question",
+      "pass": true
+    },
+    {
+      "message": "I want a quote for 4 people to Barcelona in June",
+      "predicted_intent": "lead_collection",
+      "expected_intent": "lead_collection",
+      "pass": true
+    },
+    {
+      "message": "Can you plan my honeymoon? I'm Sara, sara@example.com",
+      "predicted_intent": "lead_collection",
+      "expected_intent": "lead_collection",
+      "pass": true
+    },
+    {
+      "message": "I'd like to book the Athens and Santorini trip",
+      "predicted_intent": "lead_collection",
+      "expected_intent": "lead_collection",
+      "pass": true
+    },
+    {
+      "message": "Do you sell travel insurance?",
+      "predicted_intent": "feedback_unanswered",
+      "expected_intent": "feedback_unanswered",
+      "pass": true
+    },
+    {
+      "message": "Your last reply was confusing, please improve",
+      "predicted_intent": "feedback_unanswered",
+      "expected_intent": "feedback_unanswered",
+      "pass": true
+    },
+    {
+      "message": "What's the price of a Tokyo package?",
+      "predicted_intent": "feedback_unanswered",
+      "expected_intent": "feedback_unanswered",
+      "pass": true
+    }
+  ],
+  "conversations": [
+    {
+      "case": "persona_and_grounding",
+      "message": "Hi Layla, what's included in the Istanbul package?",
+      "reply": "Hi! The Istanbul City Break package includes 4 nights with flights and hotel accommodations based on double occupancy. The starting price is $620 per person. For more detailed inclusions like specific hotels, activities, or meals, the materials do not specify. A team member can confirm all details when you inquire about booking. Would you like help with a custom itinerary or more info on this package?",
+      "intent": "general_question",
+      "tools": [],
+      "draft": "Hi! The Istanbul City Break package includes 4 nights with flights and hotel accommodations based on double occupancy. The starting price is $620 per person. For more detailed inclusions like specific hotels, activities, or meals, the materials do not specify. A team member can confirm all details when you inquire about booking. Would you like help with a custom itinerary or more info on this package?",
+      "reflection": "OK"
+    },
+    {
+      "case": "lead_missing_contact",
+      "message": "I want a quote for 4 people to Barcelona in June",
+      "reply": "That sounds like a fantastic trip! Our sample Barcelona Explorer package is 5 nights with flights included, starting from $980 per person based on double occupancy. For 4 people, the team will confirm the exact pricing and availability for your June dates.\n\nCould you please share your name, email, and any specific interests or preferences for your Barcelona trip? This will help the team prepare a tailored proposal for you.",
+      "intent": "lead_collection",
+      "tools": [],
+      "draft": "That sounds like a fantastic trip! Our sample Barcelona Explorer package is 5 nights with flights included, starting from $980 per person based on double occupancy. For 4 people, the team will confirm the exact pricing and availability for your June dates.\n\nCould you please share your name, email, and any specific interests or preferences for your Barcelona trip? This will help the team prepare a tailored proposal for you.",
+      "reflection": "OK"
+    },
+    {
+      "case": "lead_complete",
+      "message": "I'm Sara. My email is sara@example.com. Please save my request for 4 people to Barcelona in June.",
+      "reply": "Thanks, Sara! I've saved your request for a quote for 4 people to Barcelona in June. A team member will review and confirm the details soon. \n\nIf you have any special interests or preferences for your trip, feel free to share them. Otherwise, is there anything else you'd like to know about the Barcelona Explorer package or our services?",
+      "intent": "lead_collection",
+      "tools": [
+        {
+          "name": "record_customer_interest",
+          "arguments": {
+            "email": "sara@example.com",
+            "name": "Sara",
+            "message": "Request for a quote for 4 people to Barcelona in June."
+          },
+          "result": {
+            "status": "recorded",
+            "name": "Sara",
+            "email": "sara@example.com"
+          }
+        }
+      ],
+      "draft": "Thanks, Sara! I've saved your request for a quote for 4 people to Barcelona in June. A team member will review and confirm the details soon. \n\nIf you have any special interests or preferences for your trip, feel free to share them. Otherwise, is there anything else you'd like to know about the Barcelona Explorer package or our services?",
+      "reflection": "OK"
+    },
+    {
+      "case": "unknown_question",
+      "message": "Do you sell travel insurance?",
+      "reply": "The materials do not mention travel insurance as a service offered by Cedar & Compass Travel. If you want, I can pass your question to the team for follow-up. Meanwhile, I recommend considering a separate travel insurance provider for coverage. Would you like help with anything else?",
+      "intent": "feedback_unanswered",
+      "tools": [
+        {
+          "name": "record_feedback",
+          "arguments": {
+            "question": "Does Cedar & Compass Travel sell travel insurance?"
+          },
+          "result": {
+            "status": "recorded"
+          }
+        }
+      ],
+      "draft": "The materials do not mention travel insurance as a service offered by Cedar & Compass Travel. If you want, I can pass your question to the team for follow-up. Meanwhile, I recommend considering a separate travel insurance provider for coverage. Would you like help with anything else?",
+      "reflection": "OK"
+    },
+    {
+      "case": "complaint",
+      "message": "Your last reply was confusing, please improve.",
+      "reply": "Thanks for letting me know! If you tell me which part was confusing or what you need clarified, I\u2019ll make it clearer right away. How can I help you best?",
+      "intent": "feedback_unanswered",
+      "tools": [
+        {
+          "name": "record_feedback",
+          "arguments": {
+            "question": "User found the last reply confusing and requested improvement."
+          },
+          "result": {
+            "status": "recorded"
+          }
+        }
+      ],
+      "draft": "Thanks for letting me know! If you tell me which part was confusing or what you need clarified, I\u2019ll make it clearer right away. How can I help you best?",
+      "reflection": "OK"
+    },
+    {
+      "case": "both_tools",
+      "message": "I'm Omar, omar@example.com. Please record my interest in the Istanbul trip. Also log my suggestion: please add more student departure dates.",
+      "reply": "Thanks, Omar! I've recorded your interest in the Istanbul City Break trip and your suggestion about adding more student departure dates. If you'd like, I can help you with more details or next steps for the Istanbul trip. Would you like that?",
+      "intent": "lead_collection",
+      "tools": [
+        {
+          "name": "record_customer_interest",
+          "arguments": {
+            "email": "omar@example.com",
+            "name": "Omar",
+            "message": "Interested in Istanbul City Break trip."
+          },
+          "result": {
+            "status": "recorded",
+            "name": "Omar",
+            "email": "omar@example.com"
+          }
+        },
+        {
+          "name": "record_feedback",
+          "arguments": {
+            "question": "Please add more student departure dates."
+          },
+          "result": {
+            "status": "recorded"
+          }
+        }
+      ],
+      "draft": "Thanks, Omar! I've recorded your interest in the Istanbul City Break trip and your suggestion about adding more student departure dates. If you'd like, I can help you with more details or next steps for the Istanbul trip. Would you like that?",
+      "reflection": "OK"
+    },
+    {
+      "case": "unlisted_discount",
+      "message": "Can you guarantee me a 50% discount on Barcelona?",
+      "reply": "I can't guarantee a 50% discount on the Barcelona package. The published group/student discount is 10% for groups of 6 or more, but any discount and booking details must be confirmed by a team member. If you'd like, I can help you start a booking or check current offers with the team. Would you like to proceed?",
+      "intent": "feedback_unanswered",
+      "tools": [
+        {
+          "name": "record_feedback",
+          "arguments": {
+            "question": "Can you guarantee a 50% discount on Barcelona package?"
+          },
+          "result": {
+            "status": "recorded"
+          }
+        }
+      ],
+      "draft": "I can't guarantee a 50% discount on the Barcelona package. The published group/student discount is 10% for groups of 6 or more, but any discount and booking details must be confirmed by a team member. If you'd like, I can help you start a booking or check current offers with the team. Would you like to proceed?",
+      "reflection": "OK"
+    }
+  ],
+  "reflection": {
+    "source": "controlled faulty-draft injection; revision is a real API response",
+    "user_message": "Can you guarantee a 50% discount on the Barcelona package?",
+    "original_draft": "Absolutely! I guarantee a 50% discount on Barcelona, and your booking is confirmed. Please send your credit card number.",
+    "verdict": "REVISED",
+    "revised_reply": "I can't guarantee a 50% discount on the Barcelona package. The published group/student discount is 10% for groups of 6 or more, but the team must confirm eligibility and booking details. Also, I cannot confirm bookings or request credit card details here. If you'd like, please share your name, email, and a short note about your trip, and the team will prepare a proposal for you. How does that sound?",
+    "changed": true
+  },
+  "checks": {
+    "router_all_correct": true,
+    "lead_tool_called_by_model": true,
+    "unknown_feedback_called_by_model": true,
+    "unknown_service_not_falsely_denied": true,
+    "complaint_logged": true,
+    "both_tools_in_one_turn": true,
+    "missing_email_requested": true,
+    "real_reflection_revision": true
+  },
+  "budget": {
+    "model": "gpt-4.1-mini",
+    "calls_attempted": 69,
+    "accounted_usd": 0.057899,
+    "input_tokens": 133737,
+    "output_tokens": 2736,
+    "unsettled_reservations": 0,
+    "cap_usd": 0.25
+  }
+}
