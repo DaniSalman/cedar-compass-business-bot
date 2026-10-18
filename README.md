@@ -20,8 +20,7 @@ summary, routes every message to one of three handling paths, records leads and
 feedback through real model function calls, and reviews each reply before
 sending it. It runs on Google Gemini (free tier), model `gemini-3.5-flash-lite`.
 
-- **Demo video:** _add link here_
-- **Hugging Face Space (bonus):** _add link here, or remove this line_
+- **Demo video:** https://docs.google.com/videos/d/1rYcEJidBaimUFH6_-aVCb4fBgGtG-sn1INwCS1R7zXI/play?usp=sharing
 
 ## Project structure
 
